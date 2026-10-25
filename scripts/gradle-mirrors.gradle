@@ -1,0 +1,31 @@
+// 国内网络访问 Maven Central 和 Gradle 插件仓库时，TLS 握手经常被中断，打包会失败。
+// 这个初始化脚本让依赖优先从阿里云镜像下载，镜像里没有的再回到官方仓库。
+// 只在 scripts/build-android.sh 里通过 --init-script 使用，不影响其他项目。
+
+def mirrors = [
+    'https://maven.aliyun.com/repository/google',
+    'https://maven.aliyun.com/repository/central',
+    'https://maven.aliyun.com/repository/gradle-plugin',
+]
+
+def preferMirrors(RepositoryHandler repositories, List<String> urls) {
+    urls.reverseEach { address ->
+        def mirror = repositories.maven {
+            name = 'mirror-' + address.tokenize('/').last()
+            setUrl(address)
+        }
+        repositories.remove(mirror)
+        repositories.addFirst(mirror)
+    }
+}
+
+beforeSettings { settings ->
+    preferMirrors(settings.pluginManagement.repositories, mirrors)
+    // 一旦声明了插件仓库，Gradle 就不再自动加上官方插件仓库，这里补回来当兜底
+    settings.pluginManagement.repositories.gradlePluginPortal()
+}
+
+allprojects {
+    preferMirrors(buildscript.repositories, mirrors)
+    preferMirrors(repositories, mirrors)
+}
